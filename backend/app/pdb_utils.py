@@ -153,3 +153,39 @@ async def fetch_and_store_protein(pdb_id: str, n_before: int = 3, n_inside: int 
     )
 
     return {"status": "stored", "pdb_id": pdb_id, "n_rows": len(rows)}
+
+from motor.motor_asyncio import AsyncIOMotorClient
+import numpy as np
+import pandas as pd
+
+MONGO_URI = "mongodb://mongo:27017"
+client = AsyncIOMotorClient(MONGO_URI)
+db = client["protein_db"]
+
+async def load_data_from_db():
+    all_docs = await db.proteins.find({"features": {"$exists": True}}).to_list(None)
+    all_rows = []
+    for doc in all_docs:
+        all_rows.extend(doc["features"])
+    df = pd.DataFrame(all_rows)
+
+    if df.empty or "label" not in df.columns:
+        raise ValueError("No valid data found in database.")
+
+    df = df[df["label"].isin([0, 1])]
+    df["label"] = df["label"].astype(int)
+
+    aa_cols = [col for col in df.columns if col.startswith("aa_")]
+    num_cols = [col for col in df.columns if col not in aa_cols + ["label"]]
+
+    from sklearn.compose import ColumnTransformer
+    from sklearn.preprocessing import StandardScaler, OneHotEncoder
+
+    ct = ColumnTransformer([
+        ("num", StandardScaler(), num_cols),
+        ("cat", OneHotEncoder(sparse_output=False, handle_unknown="ignore"), aa_cols)
+    ])
+    X = ct.fit_transform(df)
+    y = df["label"].values
+    return X, y
+

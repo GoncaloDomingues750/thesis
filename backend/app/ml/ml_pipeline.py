@@ -19,6 +19,12 @@ from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier,
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 from sklearn.neighbors import KNeighborsClassifier
+from io import BytesIO
+import matplotlib.table as tbl
+from PIL import Image
+
+
+
 
 def load_and_preprocess(csv_dir: str):
     all_files = [os.path.join(csv_dir, f) for f in os.listdir(csv_dir) if f.endswith(".csv")]
@@ -58,7 +64,7 @@ def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)
-    report = classification_report(y_test, y_pred)
+    report = classification_report(y_test, y_pred, output_dict=True)
     print(report)
 
     ConfusionMatrixDisplay(confusion_matrix(y_test, y_pred)).plot()
@@ -113,7 +119,7 @@ def train_stacking_model(X, y):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)
-    report = classification_report(y_test, y_pred)
+    report = classification_report(y_test, y_pred, output_dict=True)
     print(report)
 
     ConfusionMatrixDisplay(confusion_matrix(y_test, y_pred)).plot()
@@ -142,32 +148,111 @@ def train_stacking_model(X, y):
         "classification_report": report
     }
 
-def export_all_results_to_pdf_pdfpages(metrics_list, pdf_path='output_csvs/evaluation_summary.pdf'):
-    with PdfPages(pdf_path) as pdf:
+def export_all_results_to_pdf_pdfpages(metrics_list, logo_path="app/Logo.png"):
+    from matplotlib.backends.backend_pdf import PdfPages
+    from io import BytesIO
+    import matplotlib.pyplot as plt
+    import matplotlib.image as mpimg
+    import os
+
+    pdf_bytes = BytesIO()
+    page_num = 1
+
+
+    def add_header_bar(fig, logo_path="app/Logo.png"):
+        """Draws a light blue header bar with resized logo on the left and title on the right."""
+        dpi = fig.dpi
+        fig_width, fig_height = fig.get_size_inches()
+
+        header_height_inches = 0.8  # ~0.8 inches header
+        header_height_rel = header_height_inches / fig_height
+
+        # Create header axes spanning the top of the page
+        header_ax = fig.add_axes([0, 1 - header_height_rel, 1, header_height_rel])
+        header_ax.set_facecolor('#ADD8E6')
+        header_ax.set_xticks([])
+        header_ax.set_yticks([])
+        header_ax.set_xlim(0, 1)
+        header_ax.set_ylim(0, 1)
+
+        # Add title on the right
+        header_ax.text(0.98, 0.5, "Classification Report", ha="right", va="center", fontsize=16, weight="bold")
+
+        # Load and plot logo on the left
+        if os.path.exists(logo_path):
+            logo_img = Image.open(logo_path)
+            logo_height_px = int(header_height_inches * dpi * 0.8)
+            aspect_ratio = logo_img.width / logo_img.height
+            logo_width_px = int(logo_height_px * aspect_ratio)
+            logo_img = logo_img.resize((logo_width_px, logo_height_px), Image.LANCZOS)
+            logo_array = np.array(logo_img)
+
+            # Create inset Axes for logo inside header
+            logo_ax = fig.add_axes([0.02, 0.90, 0.12, 0.12])  # [left, bottom, width, height] in 0-1 figure coords
+            logo_ax.imshow(mpimg.imread(logo_path))
+            logo_ax.axis('off')  # Hide borders
+
+    with PdfPages(pdf_bytes) as pdf:
         for metrics in metrics_list:
             name = metrics["model"]
-            f1_scores = metrics["f1_scores"]
-            avg_f1 = metrics["avg_f1"]
-            classification_rep = metrics["classification_report"]
+            report_dict = metrics["classification_report"]
+            labels = [k for k in report_dict if isinstance(report_dict[k], dict)]
+            columns = ['precision', 'recall', 'f1-score', 'support']
+            table_data = [[label] + [f"{report_dict[label].get(metric, 0):.2f}" for metric in columns] for label in labels]
+            table_data.insert(0, ['Class'] + [c.capitalize() for c in columns])
 
-            fig, ax = plt.subplots(figsize=(8.27, 11.69))
-            ax.axis('off')
-            report_text = f"Model: {name}\n\n"
-            report_text += f"F1 Scores (Cross-Validation): {f1_scores}\n"
-            report_text += f"Average F1 Score: {avg_f1:.4f}\n\n"
-            report_text += "Classification Report:\n" + classification_rep
-            ax.text(0, 1, report_text, ha='left', va='top', wrap=True, fontsize=10)
+            # --- PAGE 1: Table + Confusion ---
+            fig, axs = plt.subplots(2, 1, figsize=(8.27, 11.69), gridspec_kw={"height_ratios": [2, 3]})
+            fig.subplots_adjust(top=0.85, hspace=0.4)
+
+            add_header_bar(fig)
+
+            axs[0].set_title(f"{name}", fontsize=14, weight='bold', pad=20)
+
+
+            axs[0].axis('off')
+            table = axs[0].table(cellText=table_data, cellLoc='center', loc='center')
+            table.auto_set_font_size(False)
+            table.set_fontsize(10)
+            table.scale(1.2, 1.2)
+
+            confusion_path = f"plot_{name.replace(' ', '_').lower()}_confusion.png"
+            if os.path.exists(confusion_path):
+                img = mpimg.imread(confusion_path)
+                axs[1].imshow(img)
+                axs[1].axis('off')
+
+            fig.text(0.95, 0.02, f"Page {page_num}", ha='right', fontsize=9, color='gray')
             pdf.savefig(fig)
             plt.close(fig)
+            page_num += 1
 
-            for plot_type in ['confusion', 'roc', 'pr', 'learning']:
-                plot_file = f"plot_{name.replace(' ', '_').lower()}_{plot_type}.png"
-                if os.path.exists(plot_file):
-                    img = plt.imread(plot_file)
-                    fig, ax = plt.subplots(figsize=(8.27, 11.69))
-                    ax.imshow(img)
-                    ax.axis('off')
-                    pdf.savefig(fig)
-                    plt.close(fig)
+            # --- PAGE 2: ROC + PR ---
+            fig, axs = plt.subplots(2, 1, figsize=(8.27, 11.69))
+            fig.subplots_adjust(top=0.85, hspace=0.4)
 
-    print(f"📄 PDF report saved to {pdf_path}")
+            add_header_bar(fig)
+
+            for i, plot_type in enumerate(['roc', 'pr']):
+                axs[i].axis('off')
+                img_path = f"plot_{name.replace(' ', '_').lower()}_{plot_type}.png"
+                if os.path.exists(img_path):
+                    img = mpimg.imread(img_path)
+                    axs[i].imshow(img)
+
+            fig.text(0.95, 0.02, f"Page {page_num}", ha='right', fontsize=9, color='gray')
+            pdf.savefig(fig)
+            plt.close(fig)
+            page_num += 1
+
+    pdf_bytes.seek(0)
+
+    # Clean temp plots
+    for metrics in metrics_list:
+        name = metrics["model"]
+        for plot_type in ['confusion', 'roc', 'pr', 'learning']:
+            plot_file = f"plot_{name.replace(' ', '_').lower()}_{plot_type}.png"
+            if os.path.exists(plot_file):
+                os.remove(plot_file)
+
+    return pdf_bytes

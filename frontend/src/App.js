@@ -5,6 +5,7 @@ import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import { AuthProvider, useAuth } from './AuthContext';
 import './index.css';
+import MyReports from "./components/MyReports"; 
 
 function AppRoutes() {
   const { isAuthenticated } = useAuth();
@@ -30,6 +31,12 @@ function AppRoutes() {
         }
       />
       <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route
+        path="/my-reports"
+        element={
+          isAuthenticated ? <MyReports /> : <Navigate to="/login" replace />
+        }
+      />
     </Routes>
   );
 }

@@ -1,6 +1,22 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List
+from app.pdb_utils import load_data_from_db
+from pymongo import MongoClient
+from gridfs import GridFS
+
+from fastapi.responses import StreamingResponse
+from bson import ObjectId
+
+from fastapi.responses import JSONResponse
+
+from app.auth.users import get_current_user_id
+from datetime import datetime
+from fastapi import Depends
+
+
+
+
 import os
 
 from app.pdb_utils import fetch_and_store_protein
@@ -26,14 +42,14 @@ class PDBRequest(BaseModel):
     models: List[str]  # e.g. ["Decision Tree", "Random Forest", "SVM"]
 
 @router.post("/submit_ids")
-async def submit_protein_ids(request: PDBRequest):
+async def submit_protein_ids(request: PDBRequest, user_id: str = Depends(get_current_user_id)):
     try:
         # Step 1: Fetch and store protein data
         for pdb_id in request.pdb_ids:
             await fetch_and_store_protein(pdb_id, request.n_before, request.n_inside)
 
         # Step 2: Load and preprocess data from MongoDB
-        X, y = load_and_preprocess()
+        X, y = await load_data_from_db()
 
         # Step 3: Train selected models
         results = []
@@ -55,10 +71,60 @@ async def submit_protein_ids(request: PDBRequest):
             elif model_name == "Stacking":
                 results.append(train_stacking_model(X, y))
 
-        # Step 4: Save PDF report
-        export_all_results_to_pdf_pdfpages(results)
+        pdf_bytes = export_all_results_to_pdf_pdfpages(results)
+        timestamp = datetime.utcnow()
 
-        return {"status": "success", "metrics": results}
+        mongo_client = MongoClient("mongodb://mongo:27017")
+        fs = GridFS(mongo_client["protein_db"])
+        pdf_id = fs.put(pdf_bytes.read(),
+        filename=f"evaluation_summary_{timestamp}.pdf",
+        metadata={
+            "user_id": user_id,
+            "models": request.models,
+            "pdb_ids": request.pdb_ids,
+            "n_before": request.n_before,
+            "n_inside": request.n_inside,
+            "timestamp": datetime.utcnow()
+        })
+
+        return {
+            "status": "success",
+            "metrics": results,
+            "pdf_id": str(pdf_id)
+        }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+        import traceback
+        print("❌ Exception occurred:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal error: {e}")
+
+
+
+@router.get("/download_report/{file_id}")
+async def download_report(file_id: str):
+    fs = GridFS(MongoClient("mongodb://mongo:27017")["protein_db"])
+    try:
+        file = fs.get(ObjectId(file_id))
+        return StreamingResponse(file, media_type="application/pdf", headers={
+            "Content-Disposition": f"attachment; filename={file.filename}"
+        })
+    except Exception as e:
+        raise HTTPException(status_code=404, detail="PDF not found")
+    
+
+@router.get("/list_reports")
+async def list_reports(user_id: str = Depends(get_current_user_id)):
+    fs = GridFS(MongoClient("mongodb://mongo:27017")["protein_db"])
+    try:
+        files = fs.find({"metadata.user_id": user_id})
+        reports = [
+            {"filename": file.filename, "file_id": str(file._id), "upload_date": file.upload_date.isoformat()}
+            for file in files if file.filename.endswith(".pdf")
+        ]
+        return JSONResponse(content=reports)
+    except Exception as e:
+        import traceback
+        print("❌ Exception occurred:", e)
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal error: {e}")

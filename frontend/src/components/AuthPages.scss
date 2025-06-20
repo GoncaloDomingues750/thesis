@@ -1,5 +1,7 @@
-$left-color:  #242e4d;
-$right-color: #897e79;
+$left-color:  #2C3E50; // Charcoal blue
+$right-color: #4CA1AF; // Soft teal-blue
+
+
 $green-dark:  #35c3c1;
 $green-light: #00d6b7;
 $gray:        #8f8f8f;
@@ -10,23 +12,22 @@ $gray-light:  #f5f6f8;
   text-rendering: optimizeLegibility;
 }
 
-html, body { height: 100%; }
+html, body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 body {
   display: flex;
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  position: relative;
-  
-  background: linear-gradient(
-    135deg,
-    rgba($left-color, .9),
-    rgba($right-color, .9)
-  );
+  background: linear-gradient(135deg, $left-color, $right-color);
   font-family: 'Roboto', helvetica, arial, sans-serif;
-  font-size: 1.5em;
-  
-  
+  font-size: 1.2em;
+  color: #fff;
+  background-attachment: fixed;
 }
 
 .logo-img {
@@ -34,82 +35,74 @@ body {
   height: 20em;
   margin-bottom: -3em;
 }
+
 .login-form {
   width: 100%;
   padding: 2em;
   position: relative;
-  background: rgba(black, .15);
-  
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 8px;
+
   &:before {
     content: '';
     position: absolute;
     top: -2px; left: 0;
     height: 2px; width: 100%;
-    
-    background: linear-gradient(
-      to right,
-      $green-dark,
-      $green-light
-    );    
+    background: linear-gradient(to right, $green-dark, $green-light);
   }
-  
+
   @media screen and (min-width: 600px) {
     width: 50vw;
     max-width: 15em;
   }
 }
 
-  .flex-row {
-    display: flex;
-    margin-bottom: 1em;
-  }
-  
-  .lf--label {
-    width: 2em;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    
-    background: $gray-light;
-    cursor: pointer;
-  }
-  .lf--input {
-    flex: 1;
-    padding: 1em;
-    border: 0;
-    color: $gray;
-    font-size: 1rem;
+.flex-row {
+  display: flex;
+  margin-bottom: 1em;
+}
 
-    &:focus {
-      outline: none;
-      transition: transform .15s ease;
-      transform: scale(1.1);
-    }
-  }
+.lf--label {
+  width: 2em;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: $gray-light;
+  cursor: pointer;
+}
 
-  .lf--submit {
-    display: block;
-    padding: 1em;
-    width: 100%;
-    
-    background: linear-gradient(
-      to right,
-      $green-dark,
-      $green-light
-    );
-    border: 0;
-    color: #fff;
-    cursor: pointer;
-    font-size: .75em;
-    font-weight: 600;
-    text-shadow: 0 1px 0 rgba(black, .2);
-    
-    &:focus {
-      outline: none;
-      transition: transform .15s ease;
-      transform: scale(1.1);
-    }
+.lf--input {
+  flex: 1;
+  padding: 1em;
+  border: 0;
+  color: $gray;
+  font-size: 1rem;
+
+  &:focus {
+    outline: none;
+    transition: transform .15s ease;
+    transform: scale(1.1);
   }
+}
+
+.lf--submit {
+  display: block;
+  padding: 1em;
+  width: 100%;
+  background: linear-gradient(to right, $green-dark, $green-light);
+  border: 0;
+  color: #fff;
+  cursor: pointer;
+  font-size: .75em;
+  font-weight: 600;
+  text-shadow: 0 1px 0 rgba(black, .2);
+
+  &:focus {
+    outline: none;
+    transition: transform .15s ease;
+    transform: scale(1.1);
+  }
+}
 
 .lf--forgot {
   margin-top: 1em;
@@ -119,4 +112,171 @@ body {
   position: relative;
 }
 
-::placeholder { color: $gray; }
+::placeholder {
+  color: $gray;
+}
+
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+
+  th, td {
+    border: 1px solid #ccc;
+    padding: 0.5rem;
+    text-align: center;
+    color: #000;
+  }
+
+  th {
+    background-color: #f0f0f0;
+    font-weight: bold;
+  }
+}
+
+.dashboard-container {
+  max-width: 800px;
+  width: 90%;
+  margin: auto;
+  padding: 2rem;
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+  color: #fff;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-header h2 {
+  font-size: 1.5em;
+  font-weight: bold;
+}
+
+.button-row {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2rem;
+}
+
+.logout-button {
+  background: linear-gradient(to right, #ff6a5b, #ff9472); // Coral to light orange
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  margin-top: 1.5rem;
+  padding: 0.6rem 1.2rem;
+  font-weight: bold;  cursor: pointer;
+  transition: transform 0.15s ease;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  &:focus {
+    outline: none;
+    transform: scale(1.1);
+  }
+}
+
+
+.form-group {
+  margin-bottom: 1.2rem;
+  display: flex;
+  flex-direction: column;
+}
+
+.form-row {
+  display: flex;
+  gap: 1.5rem;
+  margin-bottom: 1.2rem;
+}
+
+.model-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+textarea,
+input[type="number"],
+input[type="file"] {
+  padding: 0.5rem;
+  font-size: 1rem;
+  margin-top: 0.3rem;
+  border: none;
+  border-radius: 4px;
+  color: #000;
+}
+
+button {
+  margin-top: 1.5rem;
+  padding: 0.6rem 1.2rem;
+  font-weight: bold;
+  background: linear-gradient(to right, $green-dark, $green-light);
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  &:focus {
+    outline: none;
+    transform: scale(1.1);
+  }
+}
+
+.reports-button {
+  background: linear-gradient(to right, #6a82fb, #00c6ff); // Blue gradient
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.6rem 1.2rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  &:focus {
+    outline: none;
+    transform: scale(1.1);
+  }
+}
+
+.back-button {
+  background: linear-gradient(to right, $green-dark, $green-light); // Green gradient
+  color: #fff;
+  border: none;
+  border-radius: 5px;
+  padding: 0.5rem 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: transform 0.15s ease;
+  margin-left: auto;
+
+  &:hover {
+    transform: scale(1.05);
+  }
+
+  &:focus {
+    outline: none;
+    transform: scale(1.1);
+  }
+}
+

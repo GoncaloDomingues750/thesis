@@ -87,7 +87,9 @@ function Login() {
           disabled={loading}
         />
       </form>
-      <a className="lf--forgot" href="/register">Don't have an account? Register</a>
+      <Link className="lf--forgot" to="/register">
+        Don't have an account? Register
+      </Link>
       {error && <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>}
     </div>
   );

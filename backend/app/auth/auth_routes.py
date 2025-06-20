@@ -25,7 +25,7 @@ async def register(user: UserCreate):
     if db_user:
         raise HTTPException(status_code=400, detail="Username already registered")
     new_user = await create_user(user)
-    token = create_access_token({"sub": new_user.username}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
+    token = create_access_token({"sub": new_user.id}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     return {"access_token": token, "token_type": "bearer"}
 
 @router.post("/auth/token", response_model=Token)
@@ -39,6 +39,6 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(status_code=401, detail="Incorrect password")
 
     access_token = create_access_token(
-        {"sub": user.username}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        {"sub": user.id}, timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     )
     return {"access_token": access_token, "token_type": "bearer"}

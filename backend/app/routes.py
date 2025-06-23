@@ -46,30 +46,86 @@ async def submit_protein_ids(request: PDBRequest, user_id: str = Depends(get_cur
     try:
         # Step 1: Fetch and store protein data
         for pdb_id in request.pdb_ids:
+            print(f"Processing PDB ID: {pdb_id}")
             await fetch_and_store_protein(pdb_id, request.n_before, request.n_inside)
 
         # Step 2: Load and preprocess data from MongoDB
-        X, y = await load_data_from_db()
+        X, y, feature_names = await load_data_from_db(request.n_before, request.n_inside)
 
         # Step 3: Train selected models
         results = []
         for model_name in request.models:
             if model_name == "Decision Tree":
-                results.append(train_and_evaluate(DecisionTreeClassifier(class_weight="balanced"), X, y, model_name))
+                results.append(train_and_evaluate(
+                    DecisionTreeClassifier(class_weight="balanced"),
+                    X, y, model_name,
+                    param_grid={"clf__max_depth": [3, 5, 10]},
+                    feature_names=feature_names
+                ))
+
             elif model_name == "Random Forest":
-                results.append(train_and_evaluate(RandomForestClassifier(class_weight="balanced"), X, y, model_name, param_grid={"clf__n_estimators": [50, 100]}))
-            elif model_name == "Logistic Regression":
-                results.append(train_and_evaluate(LogisticRegression(max_iter=1000, class_weight="balanced"), X, y, model_name, param_grid={"clf__C": [0.1, 1.0, 10.0]}))
-            elif model_name == "SVM":
-                results.append(train_and_evaluate(SVC(probability=True, class_weight="balanced"), X, y, model_name, param_grid={"clf__C": [0.1, 1, 10]}, use_feature_selection=True))
-            elif model_name == "KNN":
-                results.append(train_and_evaluate(KNeighborsClassifier(), X, y, model_name, param_grid={"clf__n_neighbors": [3, 5, 7]}))
+                results.append(train_and_evaluate(
+                    RandomForestClassifier(class_weight="balanced"),
+                    X, y, model_name,
+                    param_grid={
+                        "clf__n_estimators": [100],
+                        "clf__max_depth": [5, 10],
+                        "clf__max_features": ["sqrt", "log2"]
+                    },
+                    feature_names=feature_names
+                ))
+
             elif model_name == "Gradient Boosting":
-                results.append(train_and_evaluate(GradientBoostingClassifier(), X, y, model_name, param_grid={"clf__n_estimators": [100, 200]}))
+                results.append(train_and_evaluate(
+                    GradientBoostingClassifier(),
+                    X, y, model_name,
+                    param_grid={
+                        "clf__n_estimators": [100],
+                        "clf__learning_rate": [0.05, 0.1],
+                        "clf__max_depth": [3, 5]
+                    },
+                    feature_names=feature_names
+                ))
+
             elif model_name == "Extra Trees":
-                results.append(train_and_evaluate(ExtraTreesClassifier(class_weight="balanced"), X, y, model_name, param_grid={"clf__n_estimators": [100, 200]}))
+                results.append(train_and_evaluate(
+                    ExtraTreesClassifier(class_weight="balanced"),
+                    X, y, model_name,
+                    param_grid={
+                        "clf__n_estimators": [100],
+                        "clf__max_depth": [5, 10],
+                        "clf__max_features": ["sqrt", "log2"]
+                    },
+                    feature_names=feature_names
+                ))
+
+            elif model_name == "Logistic Regression":
+                results.append(train_and_evaluate(
+                    LogisticRegression(max_iter=1000, class_weight="balanced"),
+                    X, y, model_name,
+                    param_grid={"clf__C": [0.1, 1.0, 10.0]},
+                    feature_names=feature_names
+                ))
+
+            elif model_name == "SVM":
+                results.append(train_and_evaluate(
+                    SVC(probability=True, class_weight="balanced"),
+                    X, y, model_name,
+                    param_grid={"clf__C": [0.1, 1, 10]},
+                    use_feature_selection=True,
+                    feature_names=feature_names
+                ))
+
+            elif model_name == "KNN":
+                results.append(train_and_evaluate(
+                    KNeighborsClassifier(),
+                    X, y, model_name,
+                    param_grid={"clf__n_neighbors": [3, 5, 7]},
+                    feature_names=feature_names
+                ))
+
             elif model_name == "Stacking":
-                results.append(train_stacking_model(X, y))
+                results.append(train_stacking_model(X, y, feature_names=feature_names))
 
         pdf_bytes = export_all_results_to_pdf_pdfpages(results)
         timestamp = datetime.utcnow()

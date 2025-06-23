@@ -71,22 +71,34 @@ def get_features_for_residue(residue, dssp_dict, chain_id):
 
 async def fetch_and_store_protein(pdb_id: str, n_before: int = 3, n_inside: int = 4):
     entry = await db.proteins.find_one({"pdb_id": pdb_id})
-    
-    # If everything already exists
-    if entry and "metadata" in entry and "pdb_stored" in entry and entry["pdb_stored"]:
-        return {"status": "exists", "pdb_id": pdb_id, "n_rows": len(entry.get("features", []))}
 
-    # Metadata retrieval (only if missing)
+    # Skip if same PDB ID already stored with same parameters
+    if (
+        entry and entry.get("pdb_stored") is True
+        and entry.get("n_before") == n_before
+        and entry.get("n_inside") == n_inside
+    ):
+        print(f"Skipping {pdb_id}, already stored with same parameters.")
+        return {
+            "status": "exists",
+            "pdb_id": pdb_id,
+            "n_rows": len(entry.get("features", []))
+        }
+
+
+    # Fetch metadata if missing
     if not entry or "metadata" not in entry:
+        print(f"Fetching metadata for {pdb_id} from RCSB")
         metadata_url = f"https://data.rcsb.org/rest/v1/core/entry/{pdb_id}"
         r = requests.get(metadata_url)
         if r.status_code != 200:
+            print(f"Failed to fetch metadata for {pdb_id}: {r.status_code} {r.text}")
             return {"status": "error", "pdb_id": pdb_id}
         metadata = r.json()
+        print(f"Metadata fetched for {metadata['rcsb_id']}")
     else:
         metadata = entry["metadata"]
-
-    # Download PDB file
+    # Download and parse PDB file
     pdb_url = f"https://files.rcsb.org/download/{pdb_id}.pdb"
     pdb_path = f"temp_{pdb_id}.pdb"
     with open(pdb_path, "w") as f:
@@ -139,20 +151,23 @@ async def fetch_and_store_protein(pdb_id: str, n_before: int = 3, n_inside: int 
 
     os.remove(pdb_path)
 
-    # Update or insert in database
+    # Store or update entry with the parameters used
     await db.proteins.update_one(
         {"pdb_id": pdb_id},
         {
             "$set": {
                 "metadata": metadata,
                 "pdb_stored": True,
-                "features": rows
+                "features": rows,
+                "n_before": n_before,
+                "n_inside": n_inside
             }
         },
         upsert=True
     )
 
     return {"status": "stored", "pdb_id": pdb_id, "n_rows": len(rows)}
+
 
 from motor.motor_asyncio import AsyncIOMotorClient
 import numpy as np
@@ -162,8 +177,12 @@ MONGO_URI = "mongodb://mongo:27017"
 client = AsyncIOMotorClient(MONGO_URI)
 db = client["protein_db"]
 
-async def load_data_from_db():
-    all_docs = await db.proteins.find({"features": {"$exists": True}}).to_list(None)
+async def load_data_from_db(n_before: int = 3, n_inside: int = 4):
+    all_docs = await db.proteins.find({
+            "features": {"$exists": True},
+            "n_before": n_before,
+            "n_inside": n_inside
+        }).to_list(None)    
     all_rows = []
     for doc in all_docs:
         all_rows.extend(doc["features"])
@@ -187,5 +206,10 @@ async def load_data_from_db():
     ])
     X = ct.fit_transform(df)
     y = df["label"].values
-    return X, y
 
+    # Get feature names
+    num_features = ct.named_transformers_["num"].get_feature_names_out(num_cols)
+    cat_features = ct.named_transformers_["cat"].get_feature_names_out(aa_cols)
+    feature_names = list(num_features) + list(cat_features)
+
+    return X, y, feature_names

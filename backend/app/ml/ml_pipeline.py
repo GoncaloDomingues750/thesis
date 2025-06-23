@@ -22,6 +22,8 @@ from sklearn.neighbors import KNeighborsClassifier
 from io import BytesIO
 import matplotlib.table as tbl
 from PIL import Image
+from sklearn.model_selection import learning_curve
+
 
 
 
@@ -41,11 +43,19 @@ def load_and_preprocess(csv_dir: str):
         ("num", StandardScaler(), num_cols),
         ("cat", OneHotEncoder(sparse_output=False, handle_unknown="ignore"), aa_cols)
     ])
+
     X = ct.fit_transform(df)
     y = df["label"].values
-    return X, y
 
-def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection=False):
+    # Extract feature names
+    num_features = ct.named_transformers_["num"].get_feature_names_out(num_cols)
+    cat_features = ct.named_transformers_["cat"].get_feature_names_out(aa_cols)
+    feature_names = np.concatenate([num_features, cat_features])
+
+    return X, y, feature_names.tolist()
+
+
+def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection=False, feature_names=None):
     print(f"\n🔍 Running: {name}")
 
     steps = [('var', VarianceThreshold(threshold=0.0))]
@@ -57,14 +67,16 @@ def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection
     clf = GridSearchCV(pipeline, param_grid, cv=5, scoring='f1', n_jobs=-1) if param_grid else pipeline
 
     scores = cross_val_score(clf, X, y, cv=5, scoring='f1')
-    avg_f1 = np.mean(scores)
     print("F1 scores:", scores)
-    print("Avg F1 score:", avg_f1)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     clf.fit(X_train, y_train)
     y_pred = clf.predict(X_test)
     report = classification_report(y_test, y_pred, output_dict=True)
+    avg_f1 = report["macro avg"]["f1-score"]
+    print("Avg F1 score:", avg_f1)
+
+
     print(report)
 
     ConfusionMatrixDisplay(confusion_matrix(y_test, y_pred)).plot()
@@ -73,9 +85,15 @@ def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection
     plt.savefig(f"plot_{name.replace(' ', '_').lower()}_confusion.png")
     plt.close()
 
-    if hasattr(clf, "predict_proba"):
-        y_proba = clf.predict_proba(X_test)[:, 1]
+    # Always unwrap best_estimator_ if it's GridSearchCV
+    if isinstance(clf, GridSearchCV):
+        final_model = clf.best_estimator_
+    else:
+        final_model = clf
 
+    # Use predict_proba from final_model
+    if hasattr(final_model, "predict_proba"):
+        y_proba = final_model.predict_proba(X_test)[:, 1]
         RocCurveDisplay.from_predictions(y_test, y_proba)
         plt.title(f"ROC Curve - {name}")
         plt.savefig(f"plot_{name.replace(' ', '_').lower()}_roc.png")
@@ -86,21 +104,81 @@ def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection
         plt.savefig(f"plot_{name.replace(' ', '_').lower()}_pr.png")
         plt.close()
 
+    # Try to access feature importances if available
+    feature_importance_path = None
+
+    # Unwrap inner classifier if final_model is a Pipeline
+    if isinstance(final_model, Pipeline):
+        estimator = final_model.named_steps['clf']
+    else:
+        estimator = final_model
+
+    if hasattr(estimator, "feature_importances_") and feature_names is not None:
+        importances = estimator.feature_importances_
+        indices = np.argsort(importances)[::-1]
+        top_k = min(20, len(importances))
+        top_indices = indices[:top_k]
+        top_features = [feature_names[i] for i in top_indices]
+        top_importances = importances[top_indices]
+
+        plt.figure(figsize=(10, 6))
+        plt.title(f"Top {top_k} Feature Importances - {name}")
+        plt.barh(range(top_k), top_importances[::-1])
+        plt.yticks(range(top_k), top_features[::-1])
+        plt.xlabel("Importance")
+        plt.tight_layout()
+
+        feature_importance_path = f"plot_{name.replace(' ', '_').lower()}_importance.png"
+        plt.savefig(feature_importance_path)
+        plt.close()
+
+    if feature_names is not None:
+        train_sizes, train_scores, test_scores = learning_curve(
+            estimator=clf,
+            X=X, y=y,
+            cv=5,
+            scoring='f1',
+            train_sizes=np.linspace(0.1, 1.0, 5),
+            n_jobs=-1
+        )
+
+        train_mean = np.mean(train_scores, axis=1)
+        test_mean = np.mean(test_scores, axis=1)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(train_sizes, train_mean, label='Training F1 Score')
+        plt.plot(train_sizes, test_mean, label='Validation F1 Score')
+        plt.title(f"Learning Curve - {name}")
+        plt.xlabel("Training Set Size")
+        plt.ylabel("F1 Score")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+
+        learning_curve_path = f"plot_{name.replace(' ', '_').lower()}_learning.png"
+        plt.savefig(learning_curve_path)
+        plt.close()
+    else:
+        learning_curve_path = None
+
     return {
         "model": name,
         "f1_scores": scores.tolist(),
         "avg_f1": float(avg_f1),
-        "classification_report": report
+        "classification_report": report,
+        "feature_importance_path": feature_importance_path,
+        "learning_curve_path": learning_curve_path
     }
 
-def train_stacking_model(X, y):
+
+def train_stacking_model(X, y, feature_names=None):
     print("\n🤖 Running: Stacking Classifier")
 
     base_estimators = [
-        ('dt', DecisionTreeClassifier(class_weight='balanced')),
-        ('rf', RandomForestClassifier(n_estimators=100, class_weight='balanced')),
+        ('dt', DecisionTreeClassifier(max_depth=5, class_weight='balanced')),
+        ('rf', RandomForestClassifier(n_estimators=100, max_depth=10, class_weight='balanced')),
         ('knn', KNeighborsClassifier(n_neighbors=5)),
-        ('svm', SVC(probability=True, class_weight='balanced'))
+        ('svm', SVC(probability=True, kernel='rbf', C=1, class_weight='balanced'))
     ]
     meta_model = LogisticRegression(max_iter=1000, class_weight='balanced')
 
@@ -130,7 +208,6 @@ def train_stacking_model(X, y):
 
     if hasattr(clf, "predict_proba"):
         y_proba = clf.predict_proba(X_test)[:, 1]
-
         RocCurveDisplay.from_predictions(y_test, y_proba)
         plt.title("ROC Curve - Stacking")
         plt.savefig("plot_stacking_roc.png")
@@ -141,12 +218,39 @@ def train_stacking_model(X, y):
         plt.savefig("plot_stacking_pr.png")
         plt.close()
 
+    learning_curve_path = None
+    try:
+        train_sizes, train_scores, test_scores = learning_curve(
+            estimator=clf, X=X, y=y, cv=5, scoring='f1',
+            train_sizes=np.linspace(0.1, 1.0, 5), n_jobs=-1
+        )
+        train_mean = np.mean(train_scores, axis=1)
+        test_mean = np.mean(test_scores, axis=1)
+
+        plt.figure(figsize=(10, 6))
+        plt.plot(train_sizes, train_mean, label='Training F1')
+        plt.plot(train_sizes, test_mean, label='Validation F1')
+        plt.title("Learning Curve - Stacking")
+        plt.xlabel("Training Set Size")
+        plt.ylabel("F1 Score")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        learning_curve_path = "plot_stacking_learning.png"
+        plt.savefig(learning_curve_path)
+        plt.close()
+    except Exception as e:
+        print(f"⚠️ Could not generate learning curve for stacking: {e}")
+
     return {
         "model": "Stacking",
         "f1_scores": scores.tolist(),
         "avg_f1": float(avg_f1),
-        "classification_report": report
+        "classification_report": report,
+        "learning_curve_path": learning_curve_path
     }
+
+
 
 def export_all_results_to_pdf_pdfpages(metrics_list, logo_path="app/Logo.png"):
     from matplotlib.backends.backend_pdf import PdfPages
@@ -245,12 +349,39 @@ def export_all_results_to_pdf_pdfpages(metrics_list, logo_path="app/Logo.png"):
             plt.close(fig)
             page_num += 1
 
+            # --- PAGE 3: Feature Importance ---
+            if metrics.get("feature_importance_path"):
+                fig, ax = plt.subplots(figsize=(8.27, 11.69))
+                add_header_bar(fig)
+                ax.axis('off')
+
+                img = mpimg.imread(metrics["feature_importance_path"])
+                ax.imshow(img)
+                fig.text(0.95, 0.02, f"Page {page_num}", ha='right', fontsize=9, color='gray')
+                pdf.savefig(fig)
+                plt.close(fig)
+                page_num += 1
+
+
+            # --- PAGE 4: Learning Curve ---
+            if metrics.get("learning_curve_path"):
+                fig, ax = plt.subplots(figsize=(8.27, 11.69))
+                add_header_bar(fig)
+                ax.axis('off')
+
+                img = mpimg.imread(metrics["learning_curve_path"])
+                ax.imshow(img)
+                fig.text(0.95, 0.02, f"Page {page_num}", ha='right', fontsize=9, color='gray')
+                pdf.savefig(fig)
+                plt.close(fig)
+                page_num += 1
+
     pdf_bytes.seek(0)
 
     # Clean temp plots
     for metrics in metrics_list:
         name = metrics["model"]
-        for plot_type in ['confusion', 'roc', 'pr', 'learning']:
+        for plot_type in ['confusion', 'roc', 'pr', 'learning', 'importance']:
             plot_file = f"plot_{name.replace(' ', '_').lower()}_{plot_type}.png"
             if os.path.exists(plot_file):
                 os.remove(plot_file)

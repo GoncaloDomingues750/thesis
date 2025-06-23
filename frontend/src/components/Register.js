@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import './AuthPages.scss';
+import { Link } from "react-router-dom";
 
 function Register() {
   const [username, setUsername] = useState('');
@@ -89,7 +90,7 @@ function Register() {
           disabled={loading}
         />
       </form>
-      <a className="lf--forgot" href="/login">Already have an account? Login</a>
+      <Link className="lf--forgot" to="/login">Already have an account? Login</Link>
       {error && <p style={{ color: 'red', textAlign: 'center' }}>{error}</p>}
     </div>
   );

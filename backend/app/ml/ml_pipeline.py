@@ -23,6 +23,10 @@ from io import BytesIO
 import matplotlib.table as tbl
 from PIL import Image
 from sklearn.model_selection import learning_curve
+from sklearn.model_selection import cross_val_predict
+from sklearn.base import clone
+from sklearn.model_selection import StratifiedKFold
+
 
 
 
@@ -66,46 +70,46 @@ def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection
 
     clf = GridSearchCV(pipeline, param_grid, cv=5, scoring='f1', n_jobs=-1) if param_grid else pipeline
 
-    scores = cross_val_score(clf, X, y, cv=5, scoring='f1')
-    print("F1 scores:", scores)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    report = classification_report(y_test, y_pred, output_dict=True)
+    y_proba = cross_val_predict(clf, X, y, cv=5, method='predict_proba')
+    y_pred = np.argmax(y_proba, axis=1)
+    report = classification_report(y, y_pred, output_dict=True)
+    avg_f1 = report["macro avg"]["f1-score"]
+    print("Avg F1 score:", avg_f1)
     avg_f1 = report["macro avg"]["f1-score"]
     print("Avg F1 score:", avg_f1)
 
 
     print(report)
 
-    ConfusionMatrixDisplay(confusion_matrix(y_test, y_pred)).plot()
+    ConfusionMatrixDisplay(confusion_matrix(y, y_pred)).plot()
     plt.title(f"Confusion Matrix - {name}")
     plt.tight_layout()
     plt.savefig(f"plot_{name.replace(' ', '_').lower()}_confusion.png")
     plt.close()
 
-    # Always unwrap best_estimator_ if it's GridSearchCV
+    try:
+        RocCurveDisplay.from_predictions(y, y_proba[:, 1])
+        plt.title(f"ROC Curve - {name}")
+        plt.savefig(f"plot_{name.replace(' ', '_').lower()}_roc.png")
+        plt.close()
+
+        PrecisionRecallDisplay.from_predictions(y, y_proba[:, 1])
+        plt.title(f"Precision-Recall Curve - {name}")
+        plt.savefig(f"plot_{name.replace(' ', '_').lower()}_pr.png")
+        plt.close()
+    except AttributeError:
+        print(f"⚠️ Model {name} does not support predict_proba, skipping ROC/PR plots.")
+
+    # Try to access feature importances if available
+    feature_importance_path = None
+
+    clf.fit(X, y)
     if isinstance(clf, GridSearchCV):
         final_model = clf.best_estimator_
     else:
         final_model = clf
 
-    # Use predict_proba from final_model
-    if hasattr(final_model, "predict_proba"):
-        y_proba = final_model.predict_proba(X_test)[:, 1]
-        RocCurveDisplay.from_predictions(y_test, y_proba)
-        plt.title(f"ROC Curve - {name}")
-        plt.savefig(f"plot_{name.replace(' ', '_').lower()}_roc.png")
-        plt.close()
-
-        PrecisionRecallDisplay.from_predictions(y_test, y_proba)
-        plt.title(f"Precision-Recall Curve - {name}")
-        plt.savefig(f"plot_{name.replace(' ', '_').lower()}_pr.png")
-        plt.close()
-
-    # Try to access feature importances if available
-    feature_importance_path = None
 
     # Unwrap inner classifier if final_model is a Pipeline
     if isinstance(final_model, Pipeline):
@@ -161,6 +165,8 @@ def train_and_evaluate(model, X, y, name, param_grid=None, use_feature_selection
     else:
         learning_curve_path = None
 
+    scores = cross_val_score(clf, X, y, cv=5, scoring='f1')
+
     return {
         "model": name,
         "f1_scores": scores.tolist(),
@@ -189,31 +195,28 @@ def train_stacking_model(X, y, feature_names=None):
         n_jobs=-1
     )
 
-    scores = cross_val_score(clf, X, y, cv=5, scoring='f1')
-    avg_f1 = np.mean(scores)
-    print("F1 scores:", scores)
+
+    y_proba = cross_val_predict(clf, X, y, cv=5, method='predict_proba')
+    y_pred = np.argmax(y_proba, axis=1)
+    report = classification_report(y, y_pred, output_dict=True)
+    avg_f1 = report["macro avg"]["f1-score"]
+    print("Avg F1 score:", avg_f1)
+    avg_f1 = report["macro avg"]["f1-score"]
     print("Avg F1 score:", avg_f1)
 
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-    clf.fit(X_train, y_train)
-    y_pred = clf.predict(X_test)
-    report = classification_report(y_test, y_pred, output_dict=True)
-    print(report)
-
-    ConfusionMatrixDisplay(confusion_matrix(y_test, y_pred)).plot()
+    ConfusionMatrixDisplay(confusion_matrix(y, y_pred)).plot()
     plt.title("Confusion Matrix - Stacking")
     plt.tight_layout()
     plt.savefig("plot_stacking_confusion.png")
     plt.close()
 
     if hasattr(clf, "predict_proba"):
-        y_proba = clf.predict_proba(X_test)[:, 1]
-        RocCurveDisplay.from_predictions(y_test, y_proba)
+        RocCurveDisplay.from_predictions(y, y_proba[:, 1])
         plt.title("ROC Curve - Stacking")
         plt.savefig("plot_stacking_roc.png")
         plt.close()
 
-        PrecisionRecallDisplay.from_predictions(y_test, y_proba)
+        PrecisionRecallDisplay.from_predictions(y, y_proba[:, 1])
         plt.title("Precision-Recall Curve - Stacking")
         plt.savefig("plot_stacking_pr.png")
         plt.close()
@@ -241,6 +244,8 @@ def train_stacking_model(X, y, feature_names=None):
         plt.close()
     except Exception as e:
         print(f"⚠️ Could not generate learning curve for stacking: {e}")
+
+    scores = cross_val_score(clf, X, y, cv=5, scoring='f1')
 
     return {
         "model": "Stacking",
